@@ -19,26 +19,33 @@ param(
 
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 
+function Stop-Script {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Message
+    )
+
+    Write-Host $Message -ForegroundColor Red
+    exit 1
+}
+
 $users = @(Get-Content $UserFile | ForEach-Object { $_.Trim() })
 # Passwords must be read verbatim except for trailing CR from Windows line endings.
 $passwords = @(Get-Content $PasswordFile | ForEach-Object { $_.TrimEnd("`r") })
 
 if ($SharedDefault -and $PerUser) {
-    Write-Error "-SharedDefault 와 -PerUser 는 동시에 사용할 수 없습니다."
-    exit 1
+    Stop-Script "-SharedDefault and -PerUser cannot be used together."
 }
 
 $mode = if ($SharedDefault) { "SharedDefault" } else { "PerUser" }
 
 if ($mode -eq "SharedDefault") {
     if ($passwords.Count -ne 1) {
-        Write-Error "공통 디폴트 비밀번호 모드에서는 PasswordFile 에 비밀번호를 1개만 넣어야 합니다."
-        exit 1
+        Stop-Script "Shared default mode requires exactly one password in PasswordFile."
     }
 }
 elseif ($users.Count -ne $passwords.Count) {
-    Write-Error "사용자별 비밀번호 모드에서는 사용자 수($($users.Count))와 비밀번호 수($($passwords.Count))가 같아야 합니다."
-    exit 1
+    Stop-Script "Per-user mode requires the same number of users ($($users.Count)) and passwords ($($passwords.Count)). Use -default for a single shared password."
 }
 
 $sharedPassword = if ($mode -eq "SharedDefault") { $passwords[0] } else { $null }
@@ -64,7 +71,7 @@ $results = for ($i = 0; $i -lt $users.Count; $i++) {
             $Domain
         )
 
-        # 사용자당 정확히 한 번만 인증 시도
+        # Attempt exactly one bind per user.
         $conn.Bind($netCred)
 
         [PSCustomObject]@{
@@ -89,5 +96,5 @@ if ($results) {
     $results | Format-Table -AutoSize
 }
 else {
-    Write-Host "기본 비밀번호를 그대로 사용 중인 계정을 찾지 못했습니다."
+    Write-Host "No accounts were found using the default password."
 }
