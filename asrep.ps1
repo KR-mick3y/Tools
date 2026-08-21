@@ -100,10 +100,8 @@ if ($mode -eq "SharedDefault") {
                 # Attempt exactly one bind per user/password pair.
                 $conn.Bind($netCred)
 
-                $resultText = "SHARED DEFAULT PASSWORD #{0} STILL VALID" -f ($p + 1)
-
                 $foundCount++
-                Write-Host ("[{0}] {1}" -f $resultText, $fullUser)
+                Write-Host ("[+] {0} : {1}" -f $fullUser, $password)
             }
             catch {
                 continue
@@ -147,10 +145,8 @@ else {
             # Attempt exactly one bind per user/password pair.
             $conn.Bind($netCred)
 
-            $resultText = "PERSONAL PASSWORD STILL VALID"
-
             $foundCount++
-            Write-Host ("[{0}] {1}" -f $resultText, $fullUser)
+            Write-Host ("[+] {0} : {1}" -f $fullUser, $password)
         }
         catch {
             continue
