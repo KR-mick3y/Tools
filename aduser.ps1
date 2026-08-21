@@ -62,8 +62,9 @@ elseif ($users.Count -ne $passwords.Count) {
 }
 
 $sharedPassword = if ($mode -eq "SharedDefault") { $passwords[0] } else { $null }
+$foundCount = 0
 
-$results = for ($i = 0; $i -lt $users.Count; $i++) {
+for ($i = 0; $i -lt $users.Count; $i++) {
 
     $user = $users[$i]
     $password = if ($mode -eq "SharedDefault") { $sharedPassword } else { $passwords[$i] }
@@ -87,15 +88,15 @@ $results = for ($i = 0; $i -lt $users.Count; $i++) {
         # Attempt exactly one bind per user.
         $conn.Bind($netCred)
 
-        [PSCustomObject]@{
-            Username = $fullUser
-            Result   = if ($mode -eq "SharedDefault") {
-                "SHARED DEFAULT PASSWORD STILL VALID"
-            }
-            else {
-                "PERSONAL DEFAULT PASSWORD STILL VALID"
-            }
+        $resultText = if ($mode -eq "SharedDefault") {
+            "SHARED DEFAULT PASSWORD STILL VALID"
         }
+        else {
+            "PERSONAL DEFAULT PASSWORD STILL VALID"
+        }
+
+        $foundCount++
+        Write-Host ("[{0}] {1}" -f $resultText, $fullUser)
     }
     catch {
         continue
@@ -109,8 +110,9 @@ $results = for ($i = 0; $i -lt $users.Count; $i++) {
     }
 }
 
-if ($results) {
-    $results | Format-Table -AutoSize
+if ($foundCount -gt 0) {
+    Write-Host ""
+    Write-Host ("Total matches: {0}" -f $foundCount)
 }
 else {
     Write-Host "No accounts were found using the default password."
