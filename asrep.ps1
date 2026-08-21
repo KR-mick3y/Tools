@@ -11,6 +11,7 @@ param(
 )
 
 Add-Type -AssemblyName System.DirectoryServices
+Add-Type -AssemblyName System.DirectoryServices.Protocols
 
 function Stop-Script {
     param(
@@ -51,6 +52,8 @@ catch {
 # 4194304 = DONT_REQ_PREAUTH, 512 = NORMAL_ACCOUNT
 $searcher.Filter = "(&(objectCategory=person)(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=4194304))"
 $searcher.PageSize = 1000
+$searcher.SearchScope = [System.DirectoryServices.SearchScope]::Subtree
+$searcher.ReferralChasing = [System.DirectoryServices.ReferralChasingOption]::All
 $searcher.PropertiesToLoad.AddRange(@(
     'samaccountname',
     'distinguishedname',
@@ -64,6 +67,10 @@ try {
     $entries = $searcher.FindAll()
 }
 catch {
+    if ($_.Exception.Message -like "*A referral was returned from the server*") {
+        Stop-Script "LDAP search failed because the server returned a referral. Try specifying -SearchBase more narrowly, for example `"DC=$($Domain.Split('.')[0]),DC=$($Domain.Split('.')[1])`", or point -DC at a writable domain controller for that naming context."
+    }
+
     Stop-Script "LDAP search failed. $($_.Exception.Message)"
 }
 
