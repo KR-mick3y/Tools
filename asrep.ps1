@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$Domain,
 
-    [string]$SearchBase,
+    [string[]]$SearchBase,
 
     [string]$CsvPath
 )
@@ -39,6 +39,9 @@ function Convert-DomainToDn {
 
 if ([string]::IsNullOrWhiteSpace($SearchBase)) {
     $SearchBase = Convert-DomainToDn -DomainName $Domain
+}
+elseif ($SearchBase -is [array]) {
+    $SearchBase = ($SearchBase | ForEach-Object { $_.Trim() }) -join ','
 }
 
 try {
