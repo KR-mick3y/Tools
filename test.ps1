@@ -71,21 +71,31 @@ function Invoke-CmdText {
 
     $output = & cmd.exe /c $Command 2>&1
 
-    return @($output | ForEach-Object { $_.ToString() })
+    return @(
+        $output |
+            ForEach-Object { $_.ToString().Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
 }
 
 function Get-FirstMatch {
     param(
         [Parameter(Mandatory=$true)]
-        [string[]]$Lines,
+        [object[]]$Lines,
 
         [Parameter(Mandatory=$true)]
         [string[]]$Patterns
     )
 
-    foreach ($line in $Lines) {
+    foreach ($line in @($Lines)) {
+        if ([string]::IsNullOrWhiteSpace([string]$line)) {
+            continue
+        }
+
+        $text = [string]$line
+
         foreach ($pattern in $Patterns) {
-            if ($line -match $pattern) {
+            if ($text -match $pattern) {
                 return $Matches[1].Trim()
             }
         }
@@ -97,17 +107,20 @@ function Get-FirstMatch {
 function Get-NetGroupMembers {
     param(
         [Parameter(Mandatory=$true)]
-        [string[]]$Lines
+        [object[]]$Lines
     )
 
     $items = New-Object System.Collections.Generic.List[string]
     $capture = $false
 
-    foreach ($line in $Lines) {
-        $trimmed = $line.Trim()
+    foreach ($line in @($Lines)) {
+        $trimmed = [string]$line
+        if ($trimmed -ne $null) {
+            $trimmed = $trimmed.Trim()
+        }
 
         if (-not $capture) {
-            if ($trimmed -match '^Members$') {
+            if ($trimmed -match '^(Members|멤버|구성원)$') {
                 $capture = $true
             }
             continue
@@ -121,7 +134,7 @@ function Get-NetGroupMembers {
             break
         }
 
-        if ($trimmed -match '^(Group name|Alias name|Comment|Members|Group scope|User comment)\b') {
+        if ($trimmed -match '^(Group name|Alias name|Comment|Members|Group scope|User comment|그룹 이름|별칭|주석|멤버|구성원|그룹 범위|사용자 주석)\b') {
             continue
         }
 
@@ -138,19 +151,20 @@ function Get-DomainInfo {
 
     $policyLines = Invoke-CmdText "net accounts /domain"
     $minLength = Get-FirstMatch -Lines $policyLines -Patterns @(
-        '^(?:Minimum password length)\s*:\s*(\d+)\s*$'
+        '^(?:Minimum password length|Password minimum length|암호 최소 길이|최소 암호 길이|암호 길이 최소값|최소 암호 길이)\s*[:：]\s*(\d+)\s*$'
     )
     $lockoutThreshold = Get-FirstMatch -Lines $policyLines -Patterns @(
-        '^(?:Lockout threshold)\s*:\s*(\d+)\s*$'
+        '^(?:Lockout threshold|계정 잠금 임계값|잠금 임계값|잠금 허용 임계값)\s*[:：]\s*(\d+)\s*$'
     )
     $lockoutDuration = Get-FirstMatch -Lines $policyLines -Patterns @(
-        '^(?:Lockout duration(?: \(minutes\))?)\s*:\s*([0-9]+|Never)\s*$'
+        '^(?:Lockout duration(?: \(minutes\))?|계정 잠금 기간(?: \(분\))?|잠금 기간(?: \(분\))?)\s*[:：]\s*([0-9]+|Never|없음|무제한|영구적)\s*$'
     )
 
     if ($null -eq $minLength) { $minLength = "N/A" }
     if ($null -eq $lockoutThreshold) { $lockoutThreshold = "N/A" }
     if ($null -eq $lockoutDuration) { $lockoutDuration = "N/A" }
     elseif ($lockoutDuration -match '^\d+$') { $lockoutDuration = "$lockoutDuration minutes" }
+    elseif ($lockoutDuration -eq "없음" -or $lockoutDuration -eq "무제한" -or $lockoutDuration -eq "영구적") { $lockoutDuration = "Never" }
 
     $dcName = "N/A"
     $dcAddress = "N/A"
@@ -162,10 +176,10 @@ function Get-DomainInfo {
     if ($targetDomain) {
         $dcGetLines = Invoke-CmdText ("nltest /dsgetdc:{0}" -f $targetDomain)
         $dcName = Get-FirstMatch -Lines $dcGetLines -Patterns @(
-            '^\s*DC:\s*\\\\([^\s]+)\s*$'
+            '^\s*(?:DC|도메인 컨트롤러)\s*:\s*\\\\([^\s]+)\s*$'
         )
         $dcAddress = Get-FirstMatch -Lines $dcGetLines -Patterns @(
-            '^\s*Address:\s*\\\\([^\s]+)\s*$'
+            '^\s*(?:Address|주소)\s*:\s*\\\\([^\s]+)\s*$'
         )
 
         $dcListLines = Invoke-CmdText ("nltest /dclist:{0}" -f $targetDomain)
@@ -183,7 +197,14 @@ function Get-DomainInfo {
     $trustList = @(
         $trustLines |
             ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -match '^[0-9]+:' -or $_ -match '^\s*\\' }
+            Where-Object {
+                $_ -and (
+                    $_ -match '^[0-9]+:' -or
+                    $_ -match '^\s*\\' -or
+                    $_ -match 'Trust' -or
+                    $_ -match '신뢰'
+                )
+            }
     )
 
     $domainAdmins = Get-NetGroupMembers -Lines (Invoke-CmdText 'net group "Domain Admins" /domain')
