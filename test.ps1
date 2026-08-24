@@ -386,4 +386,3 @@ if ($foundCount -gt 0) {
 else {
     Write-Host "No accounts were found using the default password."
 }
-d
