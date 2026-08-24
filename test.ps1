@@ -785,7 +785,7 @@ if ($mode -eq "SharedDefault") {
                 $conn.Bind($netCred)
 
                 $foundCount++
-                Write-Host ("[+] {0} : {1}" -f $fullUser, $password)
+                Write-Host ("{1}" -f $fullUser, $password)
             }
             catch {
                 continue
