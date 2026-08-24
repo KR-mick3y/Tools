@@ -1,4 +1,5 @@
 <#
+v0.1
 Usage:
   .\aduser.ps1 -UserFile users.txt -PasswordFile passwords.txt -DC dc01 -Domain contoso.local -default
   .\aduser.ps1 -UserFile users.txt -PasswordFile passwords.txt -DC dc01 -Domain contoso.local -personal
