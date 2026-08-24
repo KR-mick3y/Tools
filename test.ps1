@@ -120,7 +120,7 @@ function Get-NetGroupMembers {
         }
 
         if (-not $capture) {
-            if ($trimmed -match '^(Members|멤버|구성원)$') {
+            if ($trimmed -match '^Members$') {
                 $capture = $true
             }
             continue
@@ -134,7 +134,7 @@ function Get-NetGroupMembers {
             break
         }
 
-        if ($trimmed -match '^(Group name|Alias name|Comment|Members|Group scope|User comment|그룹 이름|별칭|주석|멤버|구성원|그룹 범위|사용자 주석)\b') {
+        if ($trimmed -match '^(Group name|Alias name|Comment|Members|Group scope|User comment)\b') {
             continue
         }
 
@@ -151,21 +151,29 @@ function Get-DomainInfo {
 
     $policyLines = Invoke-CmdText "net accounts /domain"
     $minLength = Get-FirstMatch -Lines $policyLines -Patterns @(
-        '^(?:Minimum password length|Password minimum length|암호 최소 길이|최소 암호 길이|암호 길이 최소값|최소 암호 길이)\s*[:：]\s*(\d+)\s*$'
+        '^(?:Minimum password length|Password minimum length)\s*:\s*(\d+)\s*$'
     )
     $lockoutThreshold = Get-FirstMatch -Lines $policyLines -Patterns @(
-        '^(?:Lockout threshold|계정 잠금 임계값|잠금 임계값|잠금 허용 임계값)\s*[:：]\s*(\d+)\s*$'
+        '^(?:Lockout threshold)\s*:\s*(\d+)\s*$'
     )
     $lockoutDuration = Get-FirstMatch -Lines $policyLines -Patterns @(
-        '^(?:Lockout duration(?: \(minutes\))?|계정 잠금 기간(?: \(분\))?|잠금 기간(?: \(분\))?)\s*[:：]\s*([0-9]+|Never|없음|무제한|영구적)\s*$'
+        '^(?:Lockout duration(?: \(minutes\))?)\s*:\s*([0-9]+|Never)\s*$'
     )
 
-    if ($null -eq $minLength) { $minLength = "N/A" }
-    if ($null -eq $lockoutThreshold) { $lockoutThreshold = "N/A" }
-    if ($null -eq $lockoutDuration) { $lockoutDuration = "N/A" }
-    elseif ($lockoutDuration -match '^\d+$') { $lockoutDuration = "$lockoutDuration minutes" }
-    elseif ($lockoutDuration -eq "없음" -or $lockoutDuration -eq "무제한" -or $lockoutDuration -eq "영구적") { $lockoutDuration = "Never" }
+    if ($null -eq $minLength) {
+        $minLength = "N/A"
+    }
 
+    if ($null -eq $lockoutThreshold) {
+        $lockoutThreshold = "N/A"
+    }
+
+    if ($null -eq $lockoutDuration) {
+        $lockoutDuration = "N/A"
+    }
+    elseif ($lockoutDuration -match '^\d+$') {
+        $lockoutDuration = "$lockoutDuration minutes"
+    }
     $dcName = "N/A"
     $dcAddress = "N/A"
     $dcList = @()
@@ -176,10 +184,10 @@ function Get-DomainInfo {
     if ($targetDomain) {
         $dcGetLines = Invoke-CmdText ("nltest /dsgetdc:{0}" -f $targetDomain)
         $dcName = Get-FirstMatch -Lines $dcGetLines -Patterns @(
-            '^\s*(?:DC|도메인 컨트롤러)\s*:\s*\\\\([^\s]+)\s*$'
+            '^\s*DC\s*:\s*\\\\([^\s]+)\s*$'
         )
         $dcAddress = Get-FirstMatch -Lines $dcGetLines -Patterns @(
-            '^\s*(?:Address|주소)\s*:\s*\\\\([^\s]+)\s*$'
+            '^\s*Address\s*:\s*\\\\([^\s]+)\s*$'
         )
 
         $dcListLines = Invoke-CmdText ("nltest /dclist:{0}" -f $targetDomain)
@@ -201,8 +209,7 @@ function Get-DomainInfo {
                 $_ -and (
                     $_ -match '^[0-9]+:' -or
                     $_ -match '^\s*\\' -or
-                    $_ -match 'Trust' -or
-                    $_ -match '신뢰'
+                    $_ -match 'Trust'
                 )
             }
     )
@@ -210,15 +217,11 @@ function Get-DomainInfo {
     $domainAdmins = Get-NetGroupMembers -Lines (Invoke-CmdText 'net group "Domain Admins" /domain')
     $enterpriseAdmins = Get-NetGroupMembers -Lines (Invoke-CmdText 'net group "Enterprise Admins" /domain')
 
-    Write-Host "Domain Inventory"
-    Write-Host ("- NetBIOS Name          : {0}" -f $netbiosName)
-    Write-Host ("- DNS Name              : {0}" -f $dnsName)
-    Write-Host ("- Password Min Length   : {0}" -f $minLength)
-    Write-Host ("- Lockout Threshold     : {0}" -f $lockoutThreshold)
-    Write-Host ("- Lockout Duration      : {0}" -f $lockoutDuration)
-    Write-Host ("- DC Name               : {0}" -f $(if ($dcName) { $dcName } else { "N/A" }))
-    Write-Host ("- DC Address            : {0}" -f $(if ($dcAddress) { $dcAddress } else { "N/A" }))
-
+    Write-Host "Section 1: Domain Inventory"
+    Write-Host ("- NetBIOS Name   : {0}" -f $netbiosName)
+    Write-Host ("- DNS Name       : {0}" -f $dnsName)
+    Write-Host ("- DC Name        : {0}" -f $(if ($dcName) { $dcName } else { "N/A" }))
+    Write-Host ("- DC Address     : {0}" -f $(if ($dcAddress) { $dcAddress } else { "N/A" }))
     Write-Host "- DC List"
     if ($dcList.Count -gt 0) {
         foreach ($dc in $dcList) {
@@ -239,6 +242,14 @@ function Get-DomainInfo {
         Write-Host "  - N/A"
     }
 
+    Write-Host ""
+    Write-Host "Section 2: Password Policy"
+    Write-Host ("- Minimum Password Length : {0}" -f $minLength)
+    Write-Host ("- Lockout Threshold       : {0}" -f $lockoutThreshold)
+    Write-Host ("- Lockout Duration        : {0}" -f $lockoutDuration)
+
+    Write-Host ""
+    Write-Host "Section 3: Administrative Groups"
     Write-Host "- Domain Admins"
     if ($domainAdmins.Count -gt 0) {
         foreach ($member in $domainAdmins) {
@@ -266,7 +277,7 @@ if ($PSCmdlet.ParameterSetName -eq "DomainInfo") {
 }
 
 if (-not $UserFile -or -not $PasswordFile) {
-    Stop-Script "UserFile and PasswordFile are required unless -domainInfo is used."
+    Stop-Script "UserFile and PasswordFile are required unless -DomainInfo is used."
 }
 
 $users = @(Get-Content $UserFile | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -386,4 +397,3 @@ if ($foundCount -gt 0) {
 else {
     Write-Host "No accounts were found using the default password."
 }
-d
