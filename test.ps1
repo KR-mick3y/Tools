@@ -2,7 +2,7 @@
 Usage:
   .\aduser.ps1 -UserFile users.txt -PasswordFile passwords.txt -DC dc01 -Domain contoso.local -default
   .\aduser.ps1 -UserFile users.txt -PasswordFile passwords.txt -DC dc01 -Domain contoso.local -personal
-  .\aduser.ps1 -DC dc01 -Domain contoso.local -domainInfo
+  .\aduser.ps1 -DC dc01 -Domain contoso.local -DomainInfo
 
 Options:
   -default          Try each password in PasswordFile against every user in UserFile.
@@ -32,7 +32,6 @@ param(
     [string]$Domain,
 
     [Parameter(Mandatory=$true, ParameterSetName="DomainInfo")]
-    [Alias("domain-info", "domaininfo")]
     [switch]$DomainInfo,
 
     [Parameter(Mandatory=$false, ParameterSetName="Check")]
