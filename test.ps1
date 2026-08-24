@@ -376,11 +376,11 @@ function Invoke-Mick3yKerberoasting {
 
         if ($result.Hash) {
             $successCount++
-            Write-Host ("{0} : {1}" -f $result.SamAccountName, $result.Hash)
+            Write-Host ("{1}" -f $result.SamAccountName, $result.Hash)
         }
         else {
             $failureCount++
-            Write-Host ("{0} : {1}" -f $result.SamAccountName, $result.Error)
+            Write-Host ("{1}" -f $result.SamAccountName, $result.Error)
         }
     }
 
