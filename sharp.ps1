@@ -126,7 +126,7 @@ function Invoke-EmbeddedSharpHound
         Password for connecting to LDAP. Use this if you're using a non-domain account for connecting to computers
 
 
-    .PARAMETER DomainController
+    .PARAMETER DomainControllerㅅ
 
         Domain Controller to connect too. Specifiying this can result in data loss
 
